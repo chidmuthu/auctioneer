@@ -85,11 +85,20 @@ def _build_active_auctions_list(auctions: list[dict]) -> discord.Embed:
     return embed
 
 
-def _build_balances_embed(rows: list[dict]) -> discord.Embed:
+def _pom_balance_sheet_description() -> str:
+    """Description for the balances embed, with optional link to the Google Sheet."""
+    sheet_id = os.environ.get("GOOGLE_SPREADSHEET_ID")
+    if sheet_id:
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+        return f"From [POM Balance sheet]({url}) (source of truth)"
+    return "From POM Balance sheet (source of truth)"
+
+
+async def _build_balances_embed(rows: list[dict]) -> discord.Embed:
     """Build an embed listing POM balances from the sheet."""
     embed = discord.Embed(
         title=_balances_embed_title(),
-        description="From POM Balance sheet (source of truth)",
+        description=_pom_balance_sheet_description(),
         color=discord.Color.blue(),
     )
     if not rows:
@@ -98,9 +107,9 @@ def _build_balances_embed(rows: list[dict]) -> discord.Embed:
         lines = []
         for r in rows:
             uid = r.get(DISCORD_USER_ID_COLUMN, "?")
-            name = r.get(NAME_COLUMN, "?")
             bal = r.get(POM_BALANCE_COLUMN, -1)
-            lines.append(f"• <@{uid}> **{name}** — {bal} POM")
+            committed = await get_committed_pom_for_user(uid)
+            lines.append(f"• <@{uid}> — {bal} POM (committed: {committed})")
         embed.add_field(name="Balances", value="\n".join(lines) or "—", inline=False)
     embed.set_footer(text="Use /balances to refresh this list")
     return embed
@@ -165,7 +174,7 @@ async def _update_pinned_balances_list(channel: discord.abc.GuildChannel, bot: d
     except Exception as e:
         logger.exception("Failed to fetch POM balances for pinned list: %s", e)
         return None
-    embed = _build_balances_embed(rows)
+    embed = await _build_balances_embed(rows)
     await _update_pinned_message(
         channel, embed, _pinned_balances_message_ids, _balances_embed_title(), bot
     )
