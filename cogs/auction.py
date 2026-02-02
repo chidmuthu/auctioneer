@@ -314,18 +314,16 @@ class AuctionCog(discord.app_commands.Group):
     @app_commands.describe(
         player_name="Name of the prospect/player",
         current_bid="Current high bid amount",
-        high_bidder="Discord user who has the current high bid (optional)",
-        high_bidder_name="High bidder display name if they're not in the server",
-        hours_remaining="Hours until this bid expires (default 24 = full time left)",
+        high_bidder="Discord user who has the current high bid (must be in this server)",
+        hours_remaining="Hours until this bid expires (0–24)",
     )
     async def register(
         self,
         interaction: discord.Interaction,
         player_name: str,
         current_bid: app_commands.Range[int, 1, 1_000_000],
-        high_bidder: discord.Member | None = None,
-        high_bidder_name: str = "",
-        hours_remaining: app_commands.Range[float, 0, 24] = 24,
+        high_bidder: discord.Member,
+        hours_remaining: app_commands.Range[float, 0, 24],
     ):
         if not interaction.guild or not interaction.channel:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -351,8 +349,8 @@ class AuctionCog(discord.app_commands.Group):
                 ephemeral=True,
             )
             return
-        bidder_id: int | None = high_bidder.id if high_bidder else None
-        bidder_name = (high_bidder.display_name if high_bidder else high_bidder_name) or "—"
+        bidder_id = high_bidder.id
+        bidder_name = high_bidder.display_name
         now = int(time.time())
         # last_bid_at so that expiry = now + hours_remaining
         last_bid_at = now + int((hours_remaining - BID_EXPIRY_HOURS) * 3600)
