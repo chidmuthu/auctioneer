@@ -44,7 +44,7 @@ async def _require_auction_channel(interaction: discord.Interaction) -> bool:
     if channel_id == allowed:
         return True
     await interaction.response.send_message(
-        "Auction commands are only allowed in the designated auction channel. Use that channel for /auction start, /auctions, and /balances.",
+        f"Auction commands are only allowed in the designated auction channel <#{allowed}>. Use that channel for /auction start, /auctions, and /balances.",
         ephemeral=True,
     )
     return False
@@ -338,7 +338,7 @@ class AuctionCog(discord.app_commands.Group):
         allowed = _get_auction_channel_id()
         if allowed is not None and thread.parent_id != allowed:
             await interaction.response.send_message(
-                "This thread is not under the designated auction channel. Register only threads in that channel.",
+                f"This thread is not under the designated auction channel <#{allowed}>. Register only threads in that channel.",
                 ephemeral=True,
             )
             return
@@ -409,7 +409,7 @@ async def bid_command(interaction: discord.Interaction, amount: app_commands.Ran
     allowed_channel = _get_auction_channel_id()
     if allowed_channel is not None and auction["channel_id"] != allowed_channel:
         await interaction.response.send_message(
-            "This auction is not in the designated auction channel. Bidding is only allowed in threads under that channel.",
+            f"This auction is not in the designated auction channel <#{allowed_channel}>. Bidding is only allowed in threads under that channel.",
             ephemeral=True,
         )
         return
