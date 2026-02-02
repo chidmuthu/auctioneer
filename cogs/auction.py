@@ -18,7 +18,18 @@ from sheets import get_all_pom_balances, get_pom_balance, DISCORD_USER_ID_COLUMN
 
 logger = logging.getLogger("auctioneer")
 BID_EXPIRY_HOURS = 24
-AUCTION_CHANNEL_ID = os.getenv("DISCORD_AUCTION_CHANNEL_ID")
+
+def _get_auction_channel_id() -> int | None:
+    """Allowed channel ID for auctions (from DISCORD_AUCTION_CHANNEL_ID). None = no restriction."""
+    raw = os.environ.get("DISCORD_AUCTION_CHANNEL_ID")
+    if not raw:
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+AUCTION_CHANNEL_ID = _get_auction_channel_id()
 
 # In-memory cache: channel_id -> message_id for our pinned list messages (best-effort; cleared on restart).
 _pinned_list_message_ids: dict[int, int] = {}

@@ -236,7 +236,7 @@ async def _update_auction_embeds(bot: Bot) -> None:
                 logger.info(f"[EmbedUpdater] Updated {updated_count} embed(s)")
             # update the pinned auctions list
             try:
-                channel = bot.get_channel(int(AUCTION_CHANNEL_ID))
+                channel = bot.get_channel(AUCTION_CHANNEL_ID)
                 if channel is None:
                     logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
                 else:
@@ -245,7 +245,7 @@ async def _update_auction_embeds(bot: Bot) -> None:
                 logger.warning(f"[EmbedUpdater] Could not update pinned auctions list: {e}")
             # update the pinned balances list
             try:
-                channel = bot.get_channel(int(AUCTION_CHANNEL_ID))
+                channel = bot.get_channel(AUCTION_CHANNEL_ID)
                 if channel is None:
                     logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
                 else:
