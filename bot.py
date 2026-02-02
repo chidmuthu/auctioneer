@@ -234,24 +234,14 @@ async def _update_auction_embeds(bot: Bot) -> None:
                     logger.warning(f"[EmbedUpdater] Failed to update embed for '{player_name}': {e}")
             if updated_count > 0:
                 logger.info(f"[EmbedUpdater] Updated {updated_count} embed(s)")
-            # update the pinned auctions list
+            # Update pinned lists (edit in place, no rotate)
             try:
                 channel = bot.get_channel(AUCTION_CHANNEL_ID)
-                if channel is None:
-                    logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
-                else:
+                if channel is not None:
                     await _update_pinned_auctions_list(channel, bot)
-            except Exception as e:
-                logger.warning(f"[EmbedUpdater] Could not update pinned auctions list: {e}")
-            # update the pinned balances list
-            try:
-                channel = bot.get_channel(AUCTION_CHANNEL_ID)
-                if channel is None:
-                    logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
-                else:
                     await _update_pinned_balances_list(channel, bot)
             except Exception as e:
-                logger.warning(f"[EmbedUpdater] Could not update pinned balances list: {e}")
+                logger.warning(f"[EmbedUpdater] Could not update pinned lists: {e}")
         except Exception as e:
             logger.exception("[EmbedUpdater] Check failed: %s", e)
         await asyncio.sleep(EMBED_UPDATE_INTERVAL_SEC)

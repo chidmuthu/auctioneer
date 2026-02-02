@@ -126,8 +126,10 @@ You should see: `Auctioneer ready: Auctioneer#1234`. The bot appears as **Online
 
 ### Refresh pinned lists
 
-1. Run `/auctions` — updates pinned Active Auctions and posts a followup.
-2. Run `/balances` — updates pinned POM Balances and posts a followup.
+1. Run `/auctions` — creates a new pinned message at the bottom (unpins the old one). Response is ephemeral.
+2. Run `/balances` — same: new pinned message at the bottom. Response is ephemeral.
+
+The pinned message is always the most recent. It updates when you run the command, or when auctions start/register/complete.
 
 ### Auction completion (optional)
 

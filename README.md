@@ -68,7 +68,7 @@ python bot.py
 
 ## Behavior
 
-- **Pinned messages** — `/auctions` and `/balances` create or update pinned messages.
+- **Pinned messages** — `/auctions` and `/balances` rotate the pin when run (unpin old, send new at bottom, pin it). Background task, auction start/register/complete edit the pinned message in place to keep it up to date.
 - **Reminders** — 6h and 1h before expiry, the bot posts warnings in the auction thread.
 - **Embed updates** — Time left and color (green → yellow → red) update periodically.
 - **Completion** — After 24h with no new bid: thread locked, winner announced, POM deducted, results appended to sheet, members removed from thread.

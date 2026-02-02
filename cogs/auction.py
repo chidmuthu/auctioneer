@@ -115,60 +115,83 @@ async def _build_balances_embed(rows: list[dict]) -> discord.Embed:
     return embed
 
 
-async def _update_pinned_message(
+async def _find_our_pinned_message(
     channel: discord.abc.GuildChannel,
-    embed: discord.Embed,
     cache: dict[int, int],
     expected_embed_title: str,
     bot: discord.Client,
-) -> bool:
-    """
-    Best-effort update or create a pinned message in this channel.
-    Tries: (1) in-memory cached message_id, (2) search channel pins for our message by embed title, (3) create new.
-    Returns True if the pinned message was updated/created.
-    """
-    if isinstance(channel, discord.Thread):
-        return False
-    # 1) Try cached message_id
+) -> discord.Message | None:
+    """Find our pinned list message by cache or by searching pins. Updates cache if found via pins."""
     msg_id = cache.get(channel.id)
     if msg_id is not None:
         try:
-            msg = await channel.fetch_message(msg_id)
-            await msg.edit(embed=embed)
-            return True
+            return await channel.fetch_message(msg_id)
         except discord.NotFound:
             cache.pop(channel.id, None)
-    # 2) Search pins for our message (e.g. after restart or if someone deleted and we lost cache)
     try:
         pins = await channel.pins()
         for msg in pins:
             if msg.author != bot.user:
                 continue
             if msg.embeds and msg.embeds[0].title == expected_embed_title:
-                await msg.edit(embed=embed)
                 cache[channel.id] = msg.id
-                return True
+                return msg
     except discord.DiscordException:
         pass
-    # 3) Create new and pin
+    return None
+
+
+async def _update_pinned_message(
+    channel: discord.abc.GuildChannel,
+    embed: discord.Embed,
+    cache: dict[int, int],
+    expected_embed_title: str,
+    bot: discord.Client,
+    *,
+    rotate: bool = False,
+) -> bool:
+    """
+    rotate=False: Edit pinned message in place (or create if not found). Used by background task, auction start/register/complete.
+    rotate=True: Unpin old, send new, pin it. Used by /auctions and /balances slash commands.
+    """
+    if isinstance(channel, discord.Thread):
+        return False
+
+    existing = await _find_our_pinned_message(channel, cache, expected_embed_title, bot)
+
+    if rotate:
+        if existing is not None:
+            try:
+                await existing.unpin()
+            except discord.HTTPException:
+                pass
+            cache.pop(channel.id, None)
+    elif existing is not None:
+        await existing.edit(embed=embed)
+        return True
+
     msg = await channel.send(embed=embed)
     await msg.pin()
     cache[channel.id] = msg.id
     return True
 
 
-async def _update_pinned_auctions_list(channel: discord.abc.GuildChannel, bot: discord.Client) -> discord.Embed | None:
-    """Update or create the pinned 'active auctions' message in this channel."""
+async def _update_pinned_auctions_list(
+    channel: discord.abc.GuildChannel, bot: discord.Client, *, rotate: bool = False
+) -> discord.Embed | None:
+    """Update the pinned 'active auctions' message. rotate=True for /auctions command."""
     auctions = await get_active_auctions_by_channel(channel.id)
     embed = _build_active_auctions_list(auctions)
     await _update_pinned_message(
-        channel, embed, _pinned_list_message_ids, _active_auctions_embed_title(), bot
+        channel, embed, _pinned_list_message_ids, _active_auctions_embed_title(), bot, rotate=rotate
     )
     return embed
 
 
-async def _update_pinned_balances_list(channel: discord.abc.GuildChannel, bot: discord.Client) -> discord.Embed | None:
-    """Update or create the pinned 'POM balances' message in this channel."""
+async def _update_pinned_balances_list(
+    channel: discord.abc.GuildChannel, bot: discord.Client, *, rotate: bool = False
+) -> discord.Embed | None:
+    """Update the pinned 'POM balances' message. rotate=True for /balances command."""
     try:
         rows = await get_all_pom_balances()
     except Exception as e:
@@ -176,7 +199,7 @@ async def _update_pinned_balances_list(channel: discord.abc.GuildChannel, bot: d
         return None
     embed = await _build_balances_embed(rows)
     await _update_pinned_message(
-        channel, embed, _pinned_balances_message_ids, _balances_embed_title(), bot
+        channel, embed, _pinned_balances_message_ids, _balances_embed_title(), bot, rotate=rotate
     )
     return embed
 
@@ -516,15 +539,15 @@ async def auctions_command(interaction: discord.Interaction):
         return
     if not await _require_auction_channel(interaction):
         return
-    await interaction.response.defer(ephemeral=False)
+    await interaction.response.defer(ephemeral=True)
     try:
-        embed = await _update_pinned_auctions_list(interaction.channel, interaction.client)
+        await _update_pinned_auctions_list(interaction.channel, interaction.client, rotate=True)
     except discord.HTTPException as e:
         await interaction.followup.send(f"Could not update pinned list: {e}", ephemeral=True)
         return
     await interaction.followup.send(
         content="**Active auctions** — list updated. See pinned message above for quick links.",
-        embed=embed,
+        ephemeral=True,
     )
 
 
@@ -534,15 +557,15 @@ async def balances_command(interaction: discord.Interaction):
         return
     if not await _require_auction_channel(interaction):
         return
-    await interaction.response.defer(ephemeral=False)
+    await interaction.response.defer(ephemeral=True)
     try:
-        embed = await _update_pinned_balances_list(interaction.channel, interaction.client)
+        await _update_pinned_balances_list(interaction.channel, interaction.client, rotate=True)
     except discord.HTTPException as e:
         await interaction.followup.send(f"Could not update pinned list: {e}", ephemeral=True)
         return
     await interaction.followup.send(
         content="**POM balances** — list updated. See pinned message above for quick reference.",
-        embed=embed,
+        ephemeral=True,
     )
 
 
