@@ -5,6 +5,7 @@ Discord bot for prospect bidding in fantasy leagues. Start auction threads per p
 ## Features
 
 - **Auction threads** — Start an auction with `/auction start`; each player gets a dedicated thread
+- **Register existing threads** — Use `/auction register` inside a manually created thread so the bot tracks it (reminders, completion, `/bid`)
 - **POM budget validation** — Bids checked against Google Sheet balances (source of truth)
 - **24-hour expiry** — Auction wins when no new bid for 24 hours; thread locks and winner is announced
 - **Pinned lists** — Active auctions and POM balances pinned in the channel for quick reference
@@ -50,7 +51,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit **`.env`**: `DISCORD_TOKEN`, `DISCORD_GUILD_ID`, `GOOGLE_CREDENTIALS_PATH`, `GOOGLE_SPREADSHEET_ID`.
+Edit **`.env`**: `DISCORD_TOKEN`, `DISCORD_GUILD_ID`, `GOOGLE_CREDENTIALS_PATH`, `GOOGLE_SPREADSHEET_ID`. Optionally set `DISCORD_AUCTION_CHANNEL_ID` to restrict auction commands to one channel.
 
 ```bash
 python bot.py
@@ -61,14 +62,16 @@ python bot.py
 | Command | Description |
 |---------|-------------|
 | `/auction start` | Start an auction thread (in a channel). Requires POM balance in sheet. |
+| `/auction register` | Register an existing thread as an auction (run inside the thread). Provide player name, current bid, high bidder, hours remaining. |
 | `/bid <amount>` | Place a bid (in an auction thread). Must beat current bid; POM validated. You cannot raise your own bid. |
-| `/auctions` | Show active auctions and refresh the pinned list. |
-| `/balances` | Show POM balances from the sheet and refresh the pinned list. |
+| `/auctions` | Rotate the pinned auctions list (unpin old, post new at bottom, pin). Ephemeral confirmation. |
+| `/balances` | Rotate the pinned balances list. Ephemeral confirmation. |
 | `/discord-ids` | List Discord user IDs for all server members (for POM Balance sheet). Ephemeral. |
 
 ## Behavior
 
-- **Pinned messages** — `/auctions` and `/balances` rotate the pin when run (unpin old, send new at bottom, pin it). Background task, auction start/register/complete edit the pinned message in place to keep it up to date.
+- **Pinned messages** — `/auctions` and `/balances` rotate the pin when run (unpin old, send new at bottom, pin it). A background task also edits the pinned message in place to keep time-left and balances current. Auction start/register/complete update the lists as well.
+- **Where to run** — `/auctions` and `/balances` in the main channel; `/auction register` and `/bid` inside a thread.
 - **Reminders** — 6h and 1h before expiry, the bot posts warnings in the auction thread.
 - **Embed updates** — Time left and color (green → yellow → red) update periodically.
 - **Completion** — After 24h with no new bid: thread locked, winner announced, POM deducted, results appended to sheet, members removed from thread.

@@ -80,6 +80,8 @@ DISCORD_TOKEN=paste_your_bot_token_here
 DISCORD_GUILD_ID=paste_your_server_id_here
 GOOGLE_CREDENTIALS_PATH=path/to/your-service-account-key.json
 GOOGLE_SPREADSHEET_ID=your_sheet_id_from_url
+# Optional: restrict auction commands to one channel (right-click channel → Copy ID)
+# DISCORD_AUCTION_CHANNEL_ID=1234567890123456789
 ```
 
 Run:
@@ -109,6 +111,16 @@ You should see: `Auctioneer ready: Auctioneer#1234`. The bot appears as **Online
 3. `initial_bid`: e.g. `50` (stored as current bid)
 4. The bot creates a thread and posts an embed. The pinned **Active Auctions** message updates.
 
+### Register an existing auction
+
+Use when you have a thread created outside the bot and want the bot to track it for reminders, expiry, and `/bid`.
+
+1. **Inside the thread**, run `/auction register`.
+2. Fill in: `player_name`, `current_bid`, `high_bidder` (select the Discord user), `hours_remaining` (0–24).
+3. The bot confirms and updates the pinned **Active Auctions** list. From then on, reminders, completion, and `/bid` work in that thread.
+
+Note: Thread must be under the auction channel if `DISCORD_AUCTION_CHANNEL_ID` is set. Cannot register a thread already registered.
+
 ### Place a bid
 
 1. Open the auction thread.
@@ -126,10 +138,10 @@ You should see: `Auctioneer ready: Auctioneer#1234`. The bot appears as **Online
 
 ### Refresh pinned lists
 
-1. Run `/auctions` — creates a new pinned message at the bottom (unpins the old one). Response is ephemeral.
-2. Run `/balances` — same: new pinned message at the bottom. Response is ephemeral.
+1. Run `/auctions` — rotates the pin (unpins old, posts new at bottom, pins it). You get an ephemeral confirmation.
+2. Run `/balances` — same behavior.
 
-The pinned message is always the most recent. It updates when you run the command, or when auctions start/register/complete.
+The pinned message is always the most recent from the last `/auctions` or `/balances` run. A background task edits it in place to keep time-left and balances current. Auction start/register/complete also update the lists.
 
 ### Auction completion (optional)
 
@@ -148,3 +160,5 @@ The pinned message is always the most recent. It updates when you run the comman
 | POM balance errors | Ensure user is in POM Balance sheet with correct `ID` (Discord user ID). |
 | Google Sheet errors | Verify credentials path, sheet ID, and that the sheet is shared with the service account. |
 | Can't pin messages | Ensure bot has **Manage Messages** permission. |
+| "Use this in the main channel" | `/auctions` and `/balances` must be run in a channel, not inside a thread. |
+| "Use this inside the auction thread" | `/auction register` must be run **inside** the thread you want to register. |
