@@ -76,13 +76,12 @@ async def _check_expiry_reminders(bot: Bot) -> None:
                         try:
                             if threshold_hours >= 2:
                                 msg = (
-                                    f"⏰ **{player_name}** — about **{int(threshold_hours)} hours** "
-                                    f"left on this bid. No new bid in 24h wins!"
+                                    f"⏰ **{player_name}** — If no new bid within **{int(threshold_hours)} hours**, **{a['current_bidder_name']}** wins!"
                                 )
                             else:
                                 msg = (
                                     f"⏰ **{player_name}** — about **{int(threshold_hours)} hour** "
-                                    f"left on this bid! Last chance to outbid."
+                                    f"left on this bid! Last chance to outbid **{a['current_bidder_name']}**."
                                 )
                             await thread.send(msg)
                             sent_for_this_bid.add(threshold_hours)
