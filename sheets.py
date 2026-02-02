@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 
 import gspread
+import google.auth
 from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger("auctioneer")
@@ -20,11 +21,15 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def _get_client():
-    """Get gspread client with service account credentials."""
+    """
+    Get gspread client. Uses GOOGLE_CREDENTIALS_PATH if set and the file exists;
+    otherwise uses Application Default Credentials (e.g. VM IAM role on GCE).
+    """
     creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH")
-    if not creds_path or not os.path.isfile(creds_path):
-        raise FileNotFoundError("GOOGLE_CREDENTIALS_PATH must point to a valid service account JSON file")
-    creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    if creds_path and os.path.isfile(creds_path):
+        creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    else:
+        creds, _ = google.auth.default(scopes=SCOPES)
     return gspread.authorize(creds)
 
 
