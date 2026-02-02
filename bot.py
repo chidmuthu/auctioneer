@@ -8,19 +8,21 @@ import discord
 from discord.ext.commands import Bot
 from dotenv import load_dotenv
 
+# Load .env before any local imports that read env vars at import time (e.g. cogs.auction)
+load_dotenv()
+
 from db import (
     complete_auction,
     get_active_auctions_for_reminders,
     init_db,
 )
 from cogs import auction
-from cogs.auction import _update_pinned_auctions_list, _seconds_until_expiry
+from cogs.auction import _update_pinned_auctions_list, _update_pinned_balances_list, _seconds_until_expiry, AUCTION_CHANNEL_ID
 from sheets import append_completed_auction, deduct_pom
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("auctioneer")
 
-load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = os.getenv("DISCORD_GUILD_ID")
 
@@ -232,6 +234,24 @@ async def _update_auction_embeds(bot: Bot) -> None:
                     logger.warning(f"[EmbedUpdater] Failed to update embed for '{player_name}': {e}")
             if updated_count > 0:
                 logger.info(f"[EmbedUpdater] Updated {updated_count} embed(s)")
+            # update the pinned auctions list
+            try:
+                channel = bot.get_channel(int(AUCTION_CHANNEL_ID))
+                if channel is None:
+                    logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
+                else:
+                    await _update_pinned_auctions_list(channel, bot)
+            except Exception as e:
+                logger.warning(f"[EmbedUpdater] Could not update pinned auctions list: {e}")
+            # update the pinned balances list
+            try:
+                channel = bot.get_channel(int(AUCTION_CHANNEL_ID))
+                if channel is None:
+                    logging.info(f"[EmbedUpdater] Auction channel not found: {AUCTION_CHANNEL_ID}")
+                else:
+                    await _update_pinned_balances_list(channel, bot)
+            except Exception as e:
+                logger.warning(f"[EmbedUpdater] Could not update pinned balances list: {e}")
         except Exception as e:
             logger.exception("[EmbedUpdater] Check failed: %s", e)
         await asyncio.sleep(EMBED_UPDATE_INTERVAL_SEC)

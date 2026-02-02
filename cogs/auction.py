@@ -11,43 +11,26 @@ from db import (
     get_active_auctions_by_channel,
     get_auction_by_thread,
     get_committed_pom_for_user,
-    get_pinned_balances_message_id,
-    get_pinned_list_message_id,
     place_bid,
     register_existing_auction,
-    set_pinned_balances_message_id,
-    set_pinned_list_message_id,
 )
 from sheets import get_all_pom_balances, get_pom_balance, DISCORD_USER_ID_COLUMN, NAME_COLUMN, POM_BALANCE_COLUMN
 
 logger = logging.getLogger("auctioneer")
 BID_EXPIRY_HOURS = 24
+AUCTION_CHANNEL_ID = os.getenv("DISCORD_AUCTION_CHANNEL_ID")
 
-
-def _get_auction_channel_id() -> int | None:
-    """Allowed channel ID for auctions (from DISCORD_AUCTION_CHANNEL_ID). None = no restriction."""
-    raw = os.environ.get("DISCORD_AUCTION_CHANNEL_ID")
-    if not raw:
-        return None
-    try:
-        return int(raw.strip())
-    except ValueError:
-        return None
+# In-memory cache: channel_id -> message_id for our pinned list messages (best-effort; cleared on restart).
+_pinned_list_message_ids: dict[int, int] = {}
+_pinned_balances_message_ids: dict[int, int] = {}
 
 
 async def _require_auction_channel(interaction: discord.Interaction) -> bool:
     """Return False if auction channel is set and this is not that channel (sends error)."""
-    allowed = _get_auction_channel_id()
-    if allowed is None:
+    if AUCTION_CHANNEL_ID is None:
         return True
     channel_id = interaction.channel.id if interaction.channel else None
-    if channel_id == allowed:
-        return True
-    await interaction.response.send_message(
-        f"Auction commands are only allowed in the designated auction channel <#{allowed}>. Use that channel for /auction start, /auctions, and /balances.",
-        ephemeral=True,
-    )
-    return False
+    return channel_id == AUCTION_CHANNEL_ID
 
 
 async def _get_pom_availability(user_id: int) -> tuple[int, int] | None:
@@ -62,10 +45,20 @@ async def _get_pom_availability(user_id: int) -> tuple[int, int] | None:
     return (balance, committed)
 
 
+def _active_auctions_embed_title() -> str:
+    """Embed title we use for the pinned auctions list (for finding it in pins)."""
+    return "📌 Active Auctions"
+
+
+def _balances_embed_title() -> str:
+    """Embed title we use for the pinned balances list (for finding it in pins)."""
+    return "📌 POM Balances"
+
+
 def _build_active_auctions_list(auctions: list[dict]) -> discord.Embed:
     """Build an embed listing active auction threads as links."""
     embed = discord.Embed(
-        title="📌 Active Auctions",
+        title=_active_auctions_embed_title(),
         description="Click a link to open the thread and bid with `/bid <amount>`.",
         color=discord.Color.blue(),
     )
@@ -84,7 +77,7 @@ def _build_active_auctions_list(auctions: list[dict]) -> discord.Embed:
 def _build_balances_embed(rows: list[dict]) -> discord.Embed:
     """Build an embed listing POM balances from the sheet."""
     embed = discord.Embed(
-        title="📌 POM Balances",
+        title=_balances_embed_title(),
         description="From POM Balance sheet (source of truth)",
         color=discord.Color.blue(),
     )
@@ -105,55 +98,67 @@ def _build_balances_embed(rows: list[dict]) -> discord.Embed:
 async def _update_pinned_message(
     channel: discord.abc.GuildChannel,
     embed: discord.Embed,
-    get_msg_id,
-    set_msg_id,
+    cache: dict[int, int],
+    expected_embed_title: str,
+    bot: discord.Client,
 ) -> bool:
     """
-    Update or create a pinned message in this channel. Reused for auctions and balances.
+    Best-effort update or create a pinned message in this channel.
+    Tries: (1) in-memory cached message_id, (2) search channel pins for our message by embed title, (3) create new.
     Returns True if the pinned message was updated/created.
     """
     if isinstance(channel, discord.Thread):
         return False
-    msg_id = await get_msg_id(channel.id)
-    try:
-        if msg_id is not None:
+    # 1) Try cached message_id
+    msg_id = cache.get(channel.id)
+    if msg_id is not None:
+        try:
             msg = await channel.fetch_message(msg_id)
             await msg.edit(embed=embed)
             return True
-    except discord.NotFound:
+        except discord.NotFound:
+            cache.pop(channel.id, None)
+    # 2) Search pins for our message (e.g. after restart or if someone deleted and we lost cache)
+    try:
+        pins = await channel.pins()
+        for msg in pins:
+            if msg.author != bot.user:
+                continue
+            if msg.embeds and msg.embeds[0].title == expected_embed_title:
+                await msg.edit(embed=embed)
+                cache[channel.id] = msg.id
+                return True
+    except discord.DiscordException:
         pass
+    # 3) Create new and pin
     msg = await channel.send(embed=embed)
     await msg.pin()
-    await set_msg_id(channel.id, msg.id)
+    cache[channel.id] = msg.id
     return True
 
 
-async def _update_pinned_auctions_list(channel: discord.abc.GuildChannel, bot: discord.Client) -> bool:
+async def _update_pinned_auctions_list(channel: discord.abc.GuildChannel, bot: discord.Client) -> discord.Embed | None:
     """Update or create the pinned 'active auctions' message in this channel."""
     auctions = await get_active_auctions_by_channel(channel.id)
     embed = _build_active_auctions_list(auctions)
-    return await _update_pinned_message(
-        channel,
-        embed,
-        get_pinned_list_message_id,
-        set_pinned_list_message_id,
+    await _update_pinned_message(
+        channel, embed, _pinned_list_message_ids, _active_auctions_embed_title(), bot
     )
+    return embed
 
 
-async def _update_pinned_balances_list(channel: discord.abc.GuildChannel) -> bool:
+async def _update_pinned_balances_list(channel: discord.abc.GuildChannel, bot: discord.Client) -> discord.Embed | None:
     """Update or create the pinned 'POM balances' message in this channel."""
     try:
         rows = await get_all_pom_balances()
     except Exception as e:
         logger.exception("Failed to fetch POM balances for pinned list: %s", e)
-        return False
+        return None
     embed = _build_balances_embed(rows)
-    return await _update_pinned_message(
-        channel,
-        embed,
-        get_pinned_balances_message_id,
-        set_pinned_balances_message_id,
+    await _update_pinned_message(
+        channel, embed, _pinned_balances_message_ids, _balances_embed_title(), bot
     )
+    return embed
 
 
 def _seconds_until_expiry(last_bid_at_epoch: int) -> float:
@@ -335,10 +340,9 @@ class AuctionCog(discord.app_commands.Group):
             )
             return
         thread = interaction.channel
-        allowed = _get_auction_channel_id()
-        if allowed is not None and thread.parent_id != allowed:
+        if AUCTION_CHANNEL_ID is not None and thread.parent_id != AUCTION_CHANNEL_ID:
             await interaction.response.send_message(
-                f"This thread is not under the designated auction channel <#{allowed}>. Register only threads in that channel.",
+                f"This thread is not under the designated auction channel <#{AUCTION_CHANNEL_ID}>. Register only threads in that channel.",
                 ephemeral=True,
             )
             return
@@ -406,10 +410,9 @@ async def bid_command(interaction: discord.Interaction, amount: app_commands.Ran
             ephemeral=True,
         )
         return
-    allowed_channel = _get_auction_channel_id()
-    if allowed_channel is not None and auction["channel_id"] != allowed_channel:
+    if AUCTION_CHANNEL_ID is not None and auction["channel_id"] != AUCTION_CHANNEL_ID:
         await interaction.response.send_message(
-            f"This auction is not in the designated auction channel <#{allowed_channel}>. Bidding is only allowed in threads under that channel.",
+            f"This auction is not in the designated auction channel <#{AUCTION_CHANNEL_ID}>. Bidding is only allowed in threads under that channel.",
             ephemeral=True,
         )
         return
@@ -495,12 +498,10 @@ async def auctions_command(interaction: discord.Interaction):
         return
     await interaction.response.defer(ephemeral=False)
     try:
-        await _update_pinned_auctions_list(interaction.channel, interaction.client)
+        embed = await _update_pinned_auctions_list(interaction.channel, interaction.client)
     except discord.HTTPException as e:
         await interaction.followup.send(f"Could not update pinned list: {e}", ephemeral=True)
         return
-    auctions = await get_active_auctions_by_channel(interaction.channel.id)
-    embed = _build_active_auctions_list(auctions)
     await interaction.followup.send(
         content="**Active auctions** — list updated. See pinned message above for quick links.",
         embed=embed,
@@ -515,20 +516,10 @@ async def balances_command(interaction: discord.Interaction):
         return
     await interaction.response.defer(ephemeral=False)
     try:
-        await _update_pinned_balances_list(interaction.channel)
+        embed = await _update_pinned_balances_list(interaction.channel, interaction.client)
     except discord.HTTPException as e:
         await interaction.followup.send(f"Could not update pinned list: {e}", ephemeral=True)
         return
-    try:
-        rows = await get_all_pom_balances()
-    except Exception as e:
-        logger.exception("Failed to fetch POM balances: %s", e)
-        await interaction.followup.send(
-            "Could not fetch POM balances from the sheet. Check logs and credentials.",
-            ephemeral=True,
-        )
-        return
-    embed = _build_balances_embed(rows)
     await interaction.followup.send(
         content="**POM balances** — list updated. See pinned message above for quick reference.",
         embed=embed,

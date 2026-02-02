@@ -53,7 +53,6 @@ async def init_db():
             await conn.execute("DROP TABLE auctions")
             await conn.execute("ALTER TABLE auctions_new RENAME TO auctions")
             await conn.commit()
-    await init_pinned_list_table()
 
 
 async def create_auction(
@@ -222,76 +221,6 @@ async def get_active_auctions_by_channel(channel_id: int) -> list[dict]:
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
-
-
-async def init_pinned_list_table():
-    """Create pinned_list_messages and pinned_balances_messages tables if they don't exist."""
-    async with aiosqlite.connect(DB_PATH) as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS pinned_list_messages (
-                channel_id INTEGER PRIMARY KEY,
-                message_id INTEGER NOT NULL
-            )
-        """)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS pinned_balances_messages (
-                channel_id INTEGER PRIMARY KEY,
-                message_id INTEGER NOT NULL
-            )
-        """)
-        await conn.commit()
-
-
-async def get_pinned_list_message_id(channel_id: int) -> int | None:
-    """Return stored message_id for the pinned auctions list in this channel, or None."""
-    await init_pinned_list_table()
-    async with aiosqlite.connect(DB_PATH) as conn:
-        async with conn.execute(
-            "SELECT message_id FROM pinned_list_messages WHERE channel_id = ?",
-            (channel_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else None
-
-
-async def set_pinned_list_message_id(channel_id: int, message_id: int) -> None:
-    """Store or update the pinned list message_id for this channel."""
-    await init_pinned_list_table()
-    async with aiosqlite.connect(DB_PATH) as conn:
-        await conn.execute(
-            """
-            INSERT INTO pinned_list_messages (channel_id, message_id) VALUES (?, ?)
-            ON CONFLICT(channel_id) DO UPDATE SET message_id = excluded.message_id
-            """,
-            (channel_id, message_id),
-        )
-        await conn.commit()
-
-
-async def get_pinned_balances_message_id(channel_id: int) -> int | None:
-    """Return stored message_id for the pinned balances list in this channel, or None."""
-    await init_pinned_list_table()
-    async with aiosqlite.connect(DB_PATH) as conn:
-        async with conn.execute(
-            "SELECT message_id FROM pinned_balances_messages WHERE channel_id = ?",
-            (channel_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else None
-
-
-async def set_pinned_balances_message_id(channel_id: int, message_id: int) -> None:
-    """Store or update the pinned balances message_id for this channel."""
-    await init_pinned_list_table()
-    async with aiosqlite.connect(DB_PATH) as conn:
-        await conn.execute(
-            """
-            INSERT INTO pinned_balances_messages (channel_id, message_id) VALUES (?, ?)
-            ON CONFLICT(channel_id) DO UPDATE SET message_id = excluded.message_id
-            """,
-            (channel_id, message_id),
-        )
-        await conn.commit()
 
 
 async def complete_auction(thread_id: int) -> dict | None:
